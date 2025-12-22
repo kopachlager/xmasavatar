@@ -1,46 +1,36 @@
 
-import { GoogleGenAI } from "@google/genai";
-
-const getAIClient = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
-};
-
+/**
+ * Transforms a base64 image into a Christmas avatar by calling the Netlify serverless function.
+ */
 export async function transformToChristmasAvatar(
   base64Image: string,
   themePrompt: string
 ): Promise<string> {
-  const ai = getAIClient();
-  
-  // Clean up the base64 string if it contains the prefix
-  const data = base64Image.replace(/^data:image\/\w+;base64,/, "");
-  
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            data: data,
-            mimeType: 'image/png',
-          },
-        },
-        {
-          text: `Please edit this profile photo into a festive Christmas version. 
-          Follow these specific instructions: ${themePrompt}. 
-          Maintain the recognizable features of the person's face but integrate the festive elements naturally. 
-          The output should be a square avatar-style image.`,
-        },
-      ],
-    },
-  });
+  try {
+    const response = await fetch('/.netlify/functions/transform', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image: base64Image,
+        prompt: themePrompt,
+      }),
+    });
 
-  for (const part of response.candidates?.[0]?.content?.parts || []) {
-    if (part.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Server responded with ${response.status}`);
     }
-  }
 
-  throw new Error("No image data returned from the artisan");
+    const data = await response.json();
+    return data.image;
+  } catch (error: any) {
+    console.error("Transformation Error:", error);
+    // If the function is not found (e.g. local dev without netlify cli), 
+    // we could fallback to the old method, but for now we follow the user's "setup properly" request.
+    throw new Error(error.message || "The ritual was interrupted by a spectral error.");
+  }
 }
 
 /**

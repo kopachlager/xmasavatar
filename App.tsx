@@ -19,9 +19,6 @@ const App: React.FC = () => {
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const resultRef = useRef<HTMLDivElement>(null);
 
-  // Safety check for API Key
-  const hasApiKey = !!process.env.API_KEY;
-
   useEffect(() => {
     let interval: any;
     if (state.status === 'generating') {
@@ -76,11 +73,6 @@ const App: React.FC = () => {
   const handleGenerate = async (themeId?: ThemeOption) => {
     const targetThemeId = themeId || selectedTheme;
     if (!state.originalImage) return;
-
-    if (!hasApiKey) {
-      setState(prev => ({ ...prev, error: "Missing API Key. Please configure the Environment Variable 'API_KEY'." }));
-      return;
-    }
     
     setState(prev => ({ ...prev, isLoading: true, status: 'generating', error: null }));
     
@@ -92,8 +84,8 @@ const App: React.FC = () => {
       const result = await transformToChristmasAvatar(state.originalImage, theme?.description || '');
       setState(prev => ({ ...prev, generatedImage: result, isLoading: false, status: 'completed' }));
       triggerCelebration();
-    } catch (err) {
-      setState(prev => ({ ...prev, isLoading: false, error: "The North Pole server is busy. Try again soon.", status: 'idle' }));
+    } catch (err: any) {
+      setState(prev => ({ ...prev, isLoading: false, error: err.message || "The North Pole server is busy. Try again soon.", status: 'idle' }));
     }
   };
 
@@ -128,12 +120,6 @@ const App: React.FC = () => {
           <span>🚨 ALCHEMY IN PROGRESS 🚨</span>
         </div>
       </div>
-
-      {!hasApiKey && (
-        <div className="bg-red-600 text-white text-center py-2 text-xs font-bold">
-          ⚠️ DEVELOPER NOTICE: API_KEY environment variable is not set.
-        </div>
-      )}
 
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-24 flex flex-col items-center overflow-x-hidden">
         <header className="text-center mb-16 md:mb-28 space-y-6 md:space-y-8 animate-fade-in relative">

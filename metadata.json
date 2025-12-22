@@ -1,0 +1,7 @@
+{
+  "name": "X-Mas Avatar Pro",
+  "description": "Transform your X (Twitter) profile picture into a festive Christmas masterpiece. Enter your handle, generate, and spread the holiday cheer!",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

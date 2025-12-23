@@ -3,18 +3,17 @@
   command = "npm run build"
 
 [functions]
-  # Using esbuild is critical for the @google/genai SDK to be bundled correctly
+  # Using esbuild is critical for the @google/genai SDK to be bundled correctly in serverless functions.
   node_bundler = "esbuild"
-  # Ensures the serverless functions use a modern Node.js environment
-  node_version = "20"
 
 [[redirects]]
-  # This ensures that frontend routing works correctly
+  # This ensures that frontend routing and SPA navigation work correctly on Netlify.
   from = "/*"
   to = "/index.html"
   status = 200
 
 [[headers]]
+  # Basic security headers for your application.
   for = "/*"
   [headers.values]
     X-Frame-Options = "DENY"

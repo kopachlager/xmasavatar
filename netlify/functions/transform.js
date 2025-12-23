@@ -23,28 +23,29 @@ export const handler = async (event) => {
   try {
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      console.error("ENVIRONMENT ERROR: API_KEY is missing.");
+      console.error("ENVIRONMENT ERROR: API_KEY is missing in Netlify settings.");
       return {
         statusCode: 500,
         headers,
-        body: JSON.stringify({ error: "Configuration Error: API Key not found on server." })
+        body: JSON.stringify({ error: "Server configuration error: API Key missing." })
       };
     }
 
-    const { image, prompt } = JSON.parse(event.body);
+    const body = JSON.parse(event.body);
+    const { image, prompt } = body;
     
     if (!image) {
       return { 
         statusCode: 400, 
         headers,
-        body: JSON.stringify({ error: "No image artifact detected." }) 
+        body: JSON.stringify({ error: "No image provided for transformation." }) 
       };
     }
 
     const ai = new GoogleGenAI({ apiKey });
     const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
 
-    console.log("Starting AI transformation with prompt:", prompt);
+    console.log("Attempting transformation with prompt:", prompt);
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -57,7 +58,7 @@ export const handler = async (event) => {
             },
           },
           {
-            text: `Please edit this profile photo into a festive Christmas version. Style: ${prompt}. Maintain original facial features and identity perfectly. Square output. High quality.`,
+            text: `Transform this profile picture into a Christmas avatar. Style: ${prompt}. Keep the person's face and identity the same. High quality, square aspect ratio.`,
           },
         ],
       },
@@ -67,15 +68,14 @@ export const handler = async (event) => {
     const part = candidate?.content?.parts?.find(p => p.inlineData);
     
     if (!part) {
-       console.error("AI RESPONSE ERROR: No image data returned.", JSON.stringify(candidate));
+       console.error("AI failed to return image data:", JSON.stringify(candidate));
        return { 
          statusCode: 500, 
          headers,
-         body: JSON.stringify({ error: "The AI artisan failed to generate the festive artifact. Try a clearer portrait." }) 
+         body: JSON.stringify({ error: "Transformation failed. Please try a different photo." }) 
        };
     }
 
-    console.log("Transformation successful.");
     return {
       statusCode: 200,
       headers,
@@ -84,11 +84,11 @@ export const handler = async (event) => {
       }),
     };
   } catch (error) {
-    console.error("SERVERLESS FUNCTION CRASH:", error);
+    console.error("Function exception:", error);
     return { 
       statusCode: 500, 
       headers,
-      body: JSON.stringify({ error: "Alchemy failed: " + (error.message || "Unknown error") }) 
+      body: JSON.stringify({ error: "The North Pole server had a hiccup: " + error.message }) 
     };
   }
 };

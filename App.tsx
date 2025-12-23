@@ -5,10 +5,14 @@ import { THEMES, LOADING_MESSAGES } from './constants';
 import { transformToChristmasAvatar, urlToBase64 } from './services/geminiService';
 import confetti from 'canvas-confetti';
 
+const GENERATION_LIMIT = 3;
+const WINDOW_HOURS = 24;
+
 const App: React.FC = () => {
   const [handle, setHandle] = useState('');
   const [selectedTheme, setSelectedTheme] = useState<ThemeOption>('classic');
   const [isExpanded, setIsExpanded] = useState(false);
+  const [remainingToday, setRemainingToday] = useState(GENERATION_LIMIT);
   const [state, setState] = useState<GenerationState>({
     isLoading: false,
     error: null,
@@ -18,6 +22,13 @@ const App: React.FC = () => {
   });
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const resultRef = useRef<HTMLDivElement>(null);
+
+  // Load and check limits whenever handle changes
+  useEffect(() => {
+    if (handle) {
+      updateRemainingCount(handle.replace('@', '').toLowerCase());
+    }
+  }, [handle]);
 
   useEffect(() => {
     let interval: any;
@@ -30,6 +41,24 @@ const App: React.FC = () => {
     }
     return () => clearInterval(interval);
   }, [state.status]);
+
+  const updateRemainingCount = (cleanHandle: string) => {
+    const log = JSON.parse(localStorage.getItem('xmas_usage_log') || '{}');
+    const handleLog: number[] = log[cleanHandle] || [];
+    const now = Date.now();
+    const activeGenerations = handleLog.filter(ts => (now - ts) < (WINDOW_HOURS * 60 * 60 * 1000));
+    setRemainingToday(Math.max(0, GENERATION_LIMIT - activeGenerations.length));
+  };
+
+  const recordGeneration = (cleanHandle: string) => {
+    const log = JSON.parse(localStorage.getItem('xmas_usage_log') || '{}');
+    const now = Date.now();
+    const handleLog: number[] = log[cleanHandle] || [];
+    const newLog = [...handleLog, now].filter(ts => (now - ts) < (WINDOW_HOURS * 60 * 60 * 1000));
+    log[cleanHandle] = newLog;
+    localStorage.setItem('xmas_usage_log', JSON.stringify(log));
+    updateRemainingCount(cleanHandle);
+  };
 
   const triggerCelebration = () => {
     const duration = 4 * 1000;
@@ -48,7 +77,7 @@ const App: React.FC = () => {
 
   const handleFetchProfile = async () => {
     if (!handle) return;
-    const cleanHandle = handle.replace('@', '');
+    const cleanHandle = handle.replace('@', '').toLowerCase();
     setState(prev => ({ ...prev, isLoading: true, status: 'fetching', error: null }));
     try {
       const avatarUrl = `https://unavatar.io/twitter/${cleanHandle}`;
@@ -72,17 +101,30 @@ const App: React.FC = () => {
 
   const handleGenerate = async (themeId?: ThemeOption) => {
     const targetThemeId = themeId || selectedTheme;
+    const cleanHandle = handle ? handle.replace('@', '').toLowerCase() : 'anonymous';
+    
     if (!state.originalImage) return;
+
+    // Safety check on limit
+    const log = JSON.parse(localStorage.getItem('xmas_usage_log') || '{}');
+    const handleLog: number[] = log[cleanHandle] || [];
+    const now = Date.now();
+    const activeGenerations = handleLog.filter(ts => (now - ts) < (WINDOW_HOURS * 60 * 60 * 1000));
+    
+    if (activeGenerations.length >= GENERATION_LIMIT) {
+      setState(prev => ({ ...prev, error: `Santa's workshop is full for @${cleanHandle}! Try again in 24 hours.`, status: 'idle' }));
+      return;
+    }
     
     setState(prev => ({ ...prev, isLoading: true, status: 'generating', error: null }));
-    
-    // Smooth scroll to the manifesting area IMMEDIATELY
     resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     try {
       const theme = THEMES.find(t => t.id === targetThemeId);
       const result = await transformToChristmasAvatar(state.originalImage, theme?.description || '');
+      
       setState(prev => ({ ...prev, generatedImage: result, isLoading: false, status: 'completed' }));
+      recordGeneration(cleanHandle);
       triggerCelebration();
     } catch (err: any) {
       setState(prev => ({ ...prev, isLoading: false, error: err.message || "The North Pole server is busy. Try again soon.", status: 'idle' }));
@@ -139,7 +181,14 @@ const App: React.FC = () => {
           <section className="bg-white/95 p-8 md:p-14 rounded-[3rem] md:rounded-[4rem] flex flex-col md:flex-row items-center gap-10 md:gap-16 max-w-5xl mx-auto relative overflow-hidden shadow-[0_50px_100px_rgba(0,0,0,0.3)] ring-1 ring-white group">
             <div className="shimmer-sweep opacity-20"></div>
             <div className="flex-1 w-full space-y-4 relative z-10">
-              <label className="text-[11px] md:text-[12px] font-black text-red-600 uppercase tracking-[0.3em] ml-1">Identity Origin</label>
+              <div className="flex justify-between items-center">
+                <label className="text-[11px] md:text-[12px] font-black text-red-600 uppercase tracking-[0.3em] ml-1">Identity Origin</label>
+                {handle && (
+                  <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${remainingToday > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                    {remainingToday} manifests left today
+                  </span>
+                )}
+              </div>
               <div className="flex flex-col sm:flex-row gap-4">
                 <div className="relative flex-1">
                   <span className="absolute left-5 top-1/2 -translate-y-1/2 text-red-400 font-black text-lg">@</span>
@@ -215,7 +264,7 @@ const App: React.FC = () => {
                       </div>
                       
                       <button 
-                        disabled={!state.originalImage || state.isLoading}
+                        disabled={!state.originalImage || state.isLoading || (handle && remainingToday === 0)}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedTheme(theme.id);
@@ -227,7 +276,7 @@ const App: React.FC = () => {
                           : 'bg-red-600 text-white shadow-lg opacity-0 group-hover:opacity-100 hover:bg-red-500 active:scale-95'
                         } disabled:opacity-20`}
                       >
-                        {state.isLoading && selectedTheme === theme.id ? 'Manifesting...' : 'Apply Style'}
+                        {state.isLoading && selectedTheme === theme.id ? 'Manifesting...' : remainingToday === 0 ? 'Wait 24h' : 'Apply Style'}
                       </button>
                     </div>
                     
@@ -259,7 +308,7 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* Step 3: Transformation Section - FIXED LAYOUT */}
+          {/* Step 3: Transformation Section - IMPROVED VISUALS */}
           <section ref={resultRef} className="grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-20 items-center pb-32 md:pb-40 pt-20 max-w-7xl mx-auto px-4">
             <div className="space-y-8 md:space-y-12 flex flex-col items-center lg:items-start text-center lg:text-left order-2 lg:order-1">
               <div className="space-y-4 md:space-y-8">
@@ -274,16 +323,18 @@ const App: React.FC = () => {
               
               <button
                 onClick={() => handleGenerate()}
-                disabled={!state.originalImage || state.isLoading}
+                disabled={!state.originalImage || state.isLoading || (handle && remainingToday === 0)}
                 className="group relative px-12 md:px-20 py-8 md:py-12 rounded-[2.5rem] bg-gradient-to-br from-red-500 via-red-600 to-red-800 hover:from-red-400 hover:to-red-700 disabled:opacity-30 text-white font-black text-2xl md:text-4xl shadow-[0_30px_60px_rgba(0,0,0,0.4)] transition-all active:scale-95 overflow-hidden w-full sm:w-auto ring-[8px] ring-white/10"
               >
                 <div className="shimmer-sweep opacity-40 group-hover:opacity-60"></div>
-                <span className="relative z-10 tracking-tighter uppercase italic">Manifest Art</span>
+                <span className="relative z-10 tracking-tighter uppercase italic">
+                  {remainingToday === 0 ? 'Limit Reached' : 'Manifest Art'}
+                </span>
                 <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-1000 ease-out"></div>
               </button>
 
               {state.error && (
-                <div className="bg-white p-6 md:p-10 rounded-[2.5rem] text-red-600 text-lg md:text-xl font-bold italic w-full shadow-2xl border-b-8 border-red-200">
+                <div className="bg-white p-6 md:p-10 rounded-[2.5rem] text-red-600 text-lg md:text-xl font-bold italic w-full shadow-2xl border-b-8 border-red-200 animate-bounce">
                   " {state.error} "
                 </div>
               )}
@@ -307,17 +358,28 @@ const App: React.FC = () => {
                     ) : state.generatedImage ? (
                       <img src={state.generatedImage} alt="Festive Result" className="w-full h-full object-cover animate-fade-in scale-105 hover:scale-100 transition-transform duration-[3s]" />
                     ) : state.originalImage ? (
-                      <div className="relative w-full h-full">
-                        <img src={state.originalImage} alt="Preview" className="w-full h-full object-cover grayscale opacity-20 blur-[15px]" />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-900/5 space-y-6 md:space-y-8">
-                           <div className="text-6xl md:text-[8rem] text-red-600/10 animate-pulse">❄</div>
-                           <span className="text-red-900/40 font-serif-elegant italic text-xl md:text-3xl tracking-widest uppercase">Alchemy Awaits...</span>
+                      <div className="relative w-full h-full group/preview">
+                        <img src={state.originalImage} alt="Preview" className="w-full h-full object-cover grayscale opacity-40 blur-[2px] transition-all group-hover/preview:opacity-60 group-hover/preview:blur-0" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center space-y-6 md:space-y-8 p-12 text-center">
+                           <div className="relative">
+                             <div className="absolute -inset-8 md:-inset-12 bg-red-600/20 blur-2xl rounded-full animate-pulse"></div>
+                             <div className="text-7xl md:text-[10rem] text-white animate-spin-slow relative z-10 drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]">❆</div>
+                           </div>
+                           <div className="bg-red-600 text-white px-8 py-4 rounded-full font-black uppercase tracking-[0.4em] text-xs md:text-sm shadow-2xl relative z-10 ring-4 ring-white/20">
+                             Alchemy Awaits...
+                           </div>
+                        </div>
+                        <div className="absolute top-6 left-6 bg-white/10 backdrop-blur-md px-4 py-2 rounded-xl text-[10px] font-black text-white uppercase tracking-widest border border-white/20">
+                          Target Identity Locked
                         </div>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center text-slate-100 space-y-8 md:space-y-12">
-                        <div className="text-[8rem] md:text-[15rem] font-sans opacity-5">❆</div>
-                        <p className="font-serif-elegant italic text-slate-300 text-2xl md:text-4xl opacity-40">Awaiting Ritual</p>
+                      <div className="flex flex-col items-center justify-center text-slate-100 space-y-8 md:space-y-12 p-12 text-center">
+                        <div className="text-[10rem] md:text-[18rem] font-sans opacity-5 rotate-12">❆</div>
+                        <div className="space-y-6">
+                          <p className="font-serif-elegant italic text-slate-300 text-3xl md:text-5xl opacity-40 leading-tight">The Crucible <br/> is Empty</p>
+                          <p className="text-[10px] md:text-xs text-slate-500 uppercase tracking-[0.5em] font-black opacity-60">Upload a artifact to begin the ritual</p>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -379,6 +441,8 @@ const App: React.FC = () => {
           @keyframes slideUp { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: translateY(0); } }
           .animate-slide-up { animation: slideUp 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
           .text-shadow-xl { text-shadow: 0 40px 100px rgba(0,0,0,0.9); }
+          .animate-spin-slow { animation: spin 12s linear infinite; }
+          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         `}</style>
       </div>
     </div>
